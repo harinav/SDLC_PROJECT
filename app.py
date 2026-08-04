@@ -32,9 +32,12 @@ _apply_cloud_secrets()
 
 from agents.crew_pipeline import run_sdlc_pipeline
 from feedback.store import load_feedback, save_feedback
+from mcp_server import tools as mcp_tools
 
 st.title("Healthcare SDLC Automation")
-st.caption("5-agent SDLC flow · Domain RAG · Wikipedia · Observability · Feedback")
+st.caption("5-agent SDLC flow · Domain RAG · Wikipedia · Observability · Feedback · Cloud MCP tools")
+
+main_tab, mcp_tab = st.tabs(["SDLC Pipeline", "MCP Tools (Cloud)"])
 
 with st.sidebar:
     st.header("Settings")
@@ -57,74 +60,78 @@ with st.sidebar:
     else:
         st.write("No feedback yet.")
 
-requirement = st.text_area(
-    "Business / functional / non-functional requirement",
-    height=160,
-    placeholder="Example: Build a patient appointment booking module for a clinic EHR with HIPAA-compliant audit logs.",
-    value=(
-        "Build a patient appointment booking module for a small clinic EHR. "
-        "Functional: schedule/reschedule/cancel visits, notify patients, clinician calendar. "
-        "Non-functional: HIPAA-aware access control, audit logging, 99.5% availability, "
-        "Streamlit UI and Python backend."
-    ),
-)
+with main_tab:
+    requirement = st.text_area(
+        "Business / functional / non-functional requirement",
+        height=160,
+        placeholder="Example: Build a patient appointment booking module for a clinic EHR with HIPAA-compliant audit logs.",
+        value=(
+            "Build a patient appointment booking module for a small clinic EHR. "
+            "Functional: schedule/reschedule/cancel visits, notify patients, clinician calendar. "
+            "Non-functional: HIPAA-aware access control, audit logging, 99.5% availability, "
+            "Streamlit UI and Python backend."
+        ),
+    )
 
-run_clicked = st.button("Generate full SDLC", type="primary", use_container_width=True)
+    run_clicked = st.button("Generate full SDLC", type="primary", use_container_width=True)
 
-if run_clicked:
-    _apply_cloud_secrets()
-    if not os.getenv("GROQ_API_KEY"):
-        st.error(
-            "GROQ_API_KEY is missing. On Streamlit Cloud: App menu → Settings → Secrets, then paste:\n\n"
-            'GROQ_API_KEY = "your_key"\n'
-            'GROQ_MODEL = "llama-3.1-8b-instant"'
-        )
-    elif not requirement.strip():
-        st.error("Please enter a requirement.")
-    else:
-        with st.spinner("Running 5-agent SDLC crew (this may take a few minutes)..."):
-            result = run_sdlc_pipeline(requirement.strip(), wiki_topic=wiki_topic.strip() or "electronic health record")
-        st.session_state["last_result"] = result
-
-result = st.session_state.get("last_result")
-
-if result:
-    if not result.get("ok"):
-        st.error(f"Pipeline failed: {result.get('error')}")
-        st.json(result.get("metrics", {}))
-    else:
-        st.success(f"Run completed · ID `{result['run_id']}` · engine `{result.get('engine', 'n/a')}`")
-        st.download_button(
-            "Download Word release notes",
-            data=Path(result["docx_path"]).read_bytes(),
-            file_name=Path(result["docx_path"]).name,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
-
-        tab_art, tab_obs, tab_ctx, tab_fb = st.tabs(
-            ["Artifacts", "Observability & Metrics", "RAG / Wikipedia Context", "Agent Feedback"]
-        )
-
-        with tab_art:
-            for name, content in result.get("artifacts", {}).items():
-                with st.expander(name, expanded=(name == "Business Analyst")):
-                    st.markdown(content)
-
-        with tab_obs:
-            metrics = result.get("metrics", {})
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Avg confidence", metrics.get("avg_confidence", 0))
-            c2.metric("Avg relevancy", metrics.get("avg_relevancy", 0))
-            c3.metric("Avg hallucination risk", metrics.get("avg_hallucination_risk", 0))
-            st.subheader("Per-agent metrics")
-            for row in metrics.get("agents", []):
-                st.write(
-                    f"**{row['agent']}** — confidence `{row['confidence']}` · "
-                    f"relevancy `{row['relevancy']}` · hallucination risk `{row['hallucination_risk']}`"
+    if run_clicked:
+        _apply_cloud_secrets()
+        if not os.getenv("GROQ_API_KEY"):
+            st.error(
+                "GROQ_API_KEY is missing. On Streamlit Cloud: App menu → Settings → Secrets, then paste:\n\n"
+                'GROQ_API_KEY = "your_key"\n'
+                'GROQ_MODEL = "llama-3.1-8b-instant"'
+            )
+        elif not requirement.strip():
+            st.error("Please enter a requirement.")
+        else:
+            with st.spinner("Running 5-agent SDLC crew (this may take a few minutes)..."):
+                result = run_sdlc_pipeline(
+                    requirement.strip(),
+                    wiki_topic=wiki_topic.strip() or "electronic health record",
                 )
-            with st.expander("Metric formulas (how values are generated)", expanded=True):
-                st.markdown(
-                    """
+            st.session_state["last_result"] = result
+
+    result = st.session_state.get("last_result")
+
+    if result:
+        if not result.get("ok"):
+            st.error(f"Pipeline failed: {result.get('error')}")
+            st.json(result.get("metrics", {}))
+        else:
+            st.success(f"Run completed · ID `{result['run_id']}` · engine `{result.get('engine', 'n/a')}`")
+            st.download_button(
+                "Download Word release notes",
+                data=Path(result["docx_path"]).read_bytes(),
+                file_name=Path(result["docx_path"]).name,
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+
+            tab_art, tab_obs, tab_ctx, tab_fb = st.tabs(
+                ["Artifacts", "Observability & Metrics", "RAG / Wikipedia Context", "Agent Feedback"]
+            )
+
+            with tab_art:
+                for name, content in result.get("artifacts", {}).items():
+                    with st.expander(name, expanded=(name == "Business Analyst")):
+                        st.markdown(content)
+
+            with tab_obs:
+                metrics = result.get("metrics", {})
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Avg confidence", metrics.get("avg_confidence", 0))
+                c2.metric("Avg relevancy", metrics.get("avg_relevancy", 0))
+                c3.metric("Avg hallucination risk", metrics.get("avg_hallucination_risk", 0))
+                st.subheader("Per-agent metrics")
+                for row in metrics.get("agents", []):
+                    st.write(
+                        f"**{row['agent']}** — confidence `{row['confidence']}` · "
+                        f"relevancy `{row['relevancy']}` · hallucination risk `{row['hallucination_risk']}`"
+                    )
+                with st.expander("Metric formulas (how values are generated)", expanded=True):
+                    st.markdown(
+                        """
 **Token overlap**  
 `overlap = |req_tokens ∩ out_tokens| / |req_tokens|`
 
@@ -147,25 +154,62 @@ capped at 5.
 
 These are heuristic audit scores for traceability (not model-native logits).
 """
-                )
-            st.caption("Traces are appended to outputs/traces.jsonl for auditability.")
+                    )
+                st.caption("Traces are appended to outputs/traces.jsonl for auditability.")
 
-        with tab_ctx:
-            st.code(result.get("context_preview", ""), language="markdown")
+            with tab_ctx:
+                st.code(result.get("context_preview", ""), language="markdown")
 
-        with tab_fb:
-            st.write("Rate an agent response. Feedback is reused on the next run.")
-            agents = list(result.get("artifacts", {}).keys()) or [
-                "Business Analyst",
-                "Solution Architect",
-                "Full-Stack Developer",
-                "QA Engineer",
-                "Technical Writer",
-            ]
-            agent = st.selectbox("Agent", agents)
-            rating = st.slider("Rating", 1, 5, 4)
-            comment = st.text_input("Feedback comment", placeholder="Be more specific about HIPAA controls")
-            if st.button("Submit feedback"):
-                excerpt = result.get("artifacts", {}).get(agent, "")[:500]
-                save_feedback(result["run_id"], agent, rating, comment, excerpt)
-                st.success("Feedback saved — will influence the next run for this agent.")
+            with tab_fb:
+                st.write("Rate an agent response. Feedback is reused on the next run.")
+                agents = list(result.get("artifacts", {}).keys()) or [
+                    "Business Analyst",
+                    "Solution Architect",
+                    "Full-Stack Developer",
+                    "QA Engineer",
+                    "Technical Writer",
+                ]
+                agent = st.selectbox("Agent", agents)
+                rating = st.slider("Rating", 1, 5, 4)
+                comment = st.text_input("Feedback comment", placeholder="Be more specific about HIPAA controls")
+                if st.button("Submit feedback"):
+                    excerpt = result.get("artifacts", {}).get(agent, "")[:500]
+                    save_feedback(result["run_id"], agent, rating, comment, excerpt)
+                    st.success("Feedback saved — will influence the next run for this agent.")
+
+with mcp_tab:
+    st.subheader("MCP tools on Streamlit Cloud")
+    st.info(
+        "Streamlit Community Cloud cannot host a Cursor MCP protocol port. "
+        "These are the **same MCP tool functions**, runnable inside this cloud app. "
+        "For Cursor IDE MCP (stdio/HTTP), use the local `mcp_server/server.py`."
+    )
+    _apply_cloud_secrets()
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("project_status", use_container_width=True):
+            st.session_state["mcp_out"] = mcp_tools.project_status()
+        if st.button("list_agents", use_container_width=True):
+            st.session_state["mcp_out"] = mcp_tools.list_agents()
+        if st.button("recent_feedback", use_container_width=True):
+            st.session_state["mcp_out"] = mcp_tools.recent_feedback(10)
+        if st.button("recent_traces", use_container_width=True):
+            st.session_state["mcp_out"] = mcp_tools.recent_traces(5)
+    with c2:
+        rag_q = st.text_input("search_domain query", value="HIPAA PHI audit logging")
+        rag_k = st.number_input("top_k", min_value=1, max_value=8, value=3)
+        if st.button("search_domain", use_container_width=True):
+            st.session_state["mcp_out"] = mcp_tools.search_domain(rag_q, int(rag_k))
+        wiki_t = st.text_input("wikipedia topic", value=wiki_topic or "electronic health record")
+        wiki_n = st.number_input("sentences", min_value=1, max_value=8, value=4)
+        if st.button("wikipedia_context", use_container_width=True):
+            st.session_state["mcp_out"] = mcp_tools.wikipedia_context(wiki_t, int(wiki_n))
+
+    if "mcp_out" in st.session_state:
+        st.markdown("#### Tool response")
+        out = st.session_state["mcp_out"]
+        if isinstance(out, str):
+            st.code(out, language="markdown")
+        else:
+            st.json(out)
