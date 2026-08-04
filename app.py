@@ -72,7 +72,14 @@ requirement = st.text_area(
 run_clicked = st.button("Generate full SDLC", type="primary", use_container_width=True)
 
 if run_clicked:
-    if not requirement.strip():
+    _apply_cloud_secrets()
+    if not os.getenv("GROQ_API_KEY"):
+        st.error(
+            "GROQ_API_KEY is missing. On Streamlit Cloud: App menu → Settings → Secrets, then paste:\n\n"
+            'GROQ_API_KEY = "your_key"\n'
+            'GROQ_MODEL = "llama-3.1-8b-instant"'
+        )
+    elif not requirement.strip():
         st.error("Please enter a requirement.")
     else:
         with st.spinner("Running 5-agent SDLC crew (this may take a few minutes)..."):

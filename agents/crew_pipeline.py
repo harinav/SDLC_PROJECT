@@ -13,10 +13,32 @@ from observability.tracker import ObservabilityTracker
 from rag.knowledge import build_context
 from utils.docx_writer import write_release_notes
 
-load_dotenv(override=True)
+ROOT = Path(__file__).resolve().parents[1]
+# Do not override env vars already set by Streamlit Cloud / HF secrets.
+load_dotenv(ROOT / ".env", override=False)
 
-OUTPUT_DIR = Path(__file__).resolve().parents[1] / "outputs"
+OUTPUT_DIR = ROOT / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_groq_api_key() -> str:
+    """Prefer process env, then Streamlit secrets (Community Cloud)."""
+    key = (os.getenv("GROQ_API_KEY") or "").strip()
+    if key:
+        return key
+    try:
+        import streamlit as st
+
+        value = st.secrets.get("GROQ_API_KEY")  # type: ignore[attr-defined]
+        if value:
+            key = str(value).strip()
+            os.environ["GROQ_API_KEY"] = key
+            return key
+    except Exception:
+        pass
+    raise RuntimeError(
+        "GROQ_API_KEY missing. Set it in Streamlit Cloud Secrets, or in local .env / .streamlit/secrets.toml"
+    )
 
 AGENTS = [
     {
@@ -70,10 +92,7 @@ AGENTS = [
 
 
 def _groq_client() -> Groq:
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise RuntimeError("GROQ_API_KEY missing. Set it in .env")
-    return Groq(api_key=api_key)
+    return Groq(api_key=_resolve_groq_api_key())
 
 
 def _chat(client: Groq, system: str, user: str) -> str:
@@ -129,10 +148,16 @@ def _make_crewai_llm():
     """CrewAI BaseLLM backed by Groq SDK (avoids LiteLLM cache_breakpoint bug)."""
     from crewai.llms.base_llm import BaseLLM
 
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise RuntimeError("GROQ_API_KEY missing. Set it in .env")
+    api_key = _resolve_groq_api_key()
     model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant").replace("groq/", "")
+    try:
+        import streamlit as st
+
+        if not os.getenv("GROQ_MODEL") and st.secrets.get("GROQ_MODEL"):
+            model = str(st.secrets["GROQ_MODEL"]).replace("groq/", "")
+            os.environ["GROQ_MODEL"] = model
+    except Exception:
+        pass
 
     class GroqCrewLLM(BaseLLM):
         def __init__(self):
